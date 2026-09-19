@@ -1,5 +1,5 @@
-# Code Buddy
 **Team:** Solo
+# Code Buddy
 
 **A code reviewer for people who are new to programming.** Paste your code and get a kind, plain-English review that explains *why* each problem matters, shows you the corrected code with the changed lines highlighted, and keeps track of the habits you are still working on.
 
