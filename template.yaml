@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AI code reviewer for new coders - Lambda Function URL + Amazon Bedrock (hackathon)
+
+Parameters:
+  ModelId:
+    Type: String
+    Default: jp.anthropic.claude-sonnet-4-6
+    Description: Bedrock model or inference profile ID used for reviews
+  FoundationModelId:
+    Type: String
+    Default: anthropic.claude-sonnet-4-6
+    Description: Underlying foundation model ID (scopes the IAM policy)
+  Engine:
+    Type: String
+    Default: auto
+    AllowedValues: [auto, rules, bedrock]
+    Description: 'auto = try Bedrock then fall back to built-in checks | rules = built-in checks only | bedrock = Bedrock only'
+
+Resources:
+  ReviewerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: InvokeReviewModel
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - !Sub arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${ModelId}
+                  - !Sub arn:aws:bedrock:*::foundation-model/${FoundationModelId}
+              - Effect: Allow
+                Action: polly:SynthesizeSpeech
+                Resource: '*'
+
+  ReviewerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-fn
+      RetentionInDays: 7
+
+  ReviewerFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ReviewerLogGroup
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-fn
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Role: !GetAtt ReviewerRole.Arn
+      MemorySize: 512
+      Timeout: 60
+      Environment:
+        Variables:
+          MODEL_ID: !Ref ModelId
+          ENGINE: !Ref Engine
+      # Placeholder only - real code (index.mjs, rules.mjs, i18n.mjs, index.html) is pushed with
+      # `aws lambda update-function-code --zip-file` by deploy.sh
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({ statusCode: 200, body: 'placeholder' });
+
+  ReviewerUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt ReviewerFunction.Arn
+      AuthType: NONE
+      InvokeMode: BUFFERED
+      Cors:
+        AllowOrigins: ['*']
+        AllowMethods: ['GET', 'POST']
+        AllowHeaders: ['content-type']
+
+  UrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ReviewerFunction
+      Action: lambda:InvokeFunctionUrl
+      Principal: '*'
+      FunctionUrlAuthType: NONE
+
+  UrlInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ReviewerFunction
+      Action: lambda:InvokeFunction
+      Principal: '*'
+      InvokedViaFunctionUrl: true
+
+Outputs:
+  AppUrl:
+    Value: !GetAtt ReviewerUrl.FunctionUrl
+  FunctionName:
+    Value: !Ref ReviewerFunction

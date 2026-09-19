@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1420" media="(prefers-color-scheme: dark)">
+<title>Code Buddy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<script>
+  // Apply the saved theme before first paint so there is no flash.
+  try { var t = localStorage.getItem('code-buddy-theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
+<style>
+/* ==========================================================================
+   Code review — stylesheet
+   Idea: a reviewer's markup on a printed listing.
+     · Blue-black ink on white paper. Colour is spent only on severity.
+     · Yellow highlighter is the one interaction colour: it marks the lines
+       you're looking at and the finding that points at them.
+     · Findings are set like margin notes: where + how severe in the margin,
+       the reviewer's comment in a text face beside it.
+     · Serif for the reviewer's voice, sans for controls, mono for code only.
+   All original class names are kept — no HTML changes needed.
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600&family=Red+Hat+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap");
+
+/* ---------- Tokens ---------- */
+:root {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --ink: #17213a;
+  --muted: #586178;
+  --rule: #e2e5ec;
+  --rule-strong: #c8cdd8;
+  --sel: #f1f3f8;
+
+  /* the "accent" is just the ink; kept as tokens so nothing else breaks */
+  --accent: var(--ink);
+  --on-accent: var(--bg);
+
+  --code-bg: #f5f6f9;
+  --code-ink: #17213a;
+  --gutter-ink: #6b7489;
+  --hl: rgba(255, 219, 64, .5);
+
+  --bug: #b3261e;
+  --security: #9a5200;
+  --style: #245f9e;
+  --tip: #26714a;
+
+  --font: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Source Serif 4", "Iowan Old Style", Charter, Georgia, serif;
+  --mono: "Red Hat Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --r: 3px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1420; --surface: #0f1420; --ink: #e9ecf3; --muted: #98a2b6;
+    --rule: #232b3a; --rule-strong: #364054; --sel: #171e2d;
+    --code-bg: #151b29; --code-ink: #dfe4ee; --gutter-ink: #7d889f;
+    --hl: rgba(255, 205, 60, .26);
+    --bug: #ff8a80; --security: #e8a651; --style: #86b9ee; --tip: #66c592;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1420; --surface: #0f1420; --ink: #e9ecf3; --muted: #98a2b6;
+  --rule: #232b3a; --rule-strong: #364054; --sel: #171e2d;
+  --code-bg: #151b29; --code-ink: #dfe4ee; --gutter-ink: #7d889f;
+  --hl: rgba(255, 205, 60, .26);
+  --bug: #ff8a80; --security: #e8a651; --style: #86b9ee; --tip: #66c592;
+}
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+button, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+::selection { background: var(--hl); color: inherit; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 32px); }
+
+/* ---------- Top bar ---------- */
+.bar {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  padding-block: 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.brand { font: 600 15px var(--font); letter-spacing: -.005em; }
+.brand span { font-weight: 400; color: var(--muted); }
+.bar .spacer { flex: 1; }
+
+.status { --dot: var(--rule-strong); display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.status i { width: 7px; height: 7px; border-radius: 1px; background: var(--dot); }
+.status[data-state="bedrock"] { --dot: var(--tip); }
+.status[data-state="rules"]   { --dot: var(--security); }
+
+/* segmented control, drawn as plain tabs */
+.seg { display: inline-flex; gap: 4px; }
+.seg button {
+  border: 0; border-radius: 0; background: none;
+  padding: 5px 8px;
+  font-size: 13px; color: var(--muted);
+}
+.seg button + button { border: 0; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
+
+/* ---------- Intro ---------- */
+.intro { padding-block: clamp(32px, 6vw, 60px) 32px; }
+.intro h1 {
+  margin: 0; max-width: 14em;
+  font: 600 clamp(2rem, 4.6vw, 2.9rem)/1.08 var(--serif);
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+.intro p { margin: 14px 0 0; max-width: 34em; font: 1.075rem/1.55 var(--serif); color: var(--muted); text-wrap: pretty; }
+/* on wide screens the intro shares the two columns of the panes below it */
+@media (min-width: 960px) {
+  .intro { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 44px; align-items: end; }
+  .intro p { margin: 0; padding-bottom: 6px; }
+}
+
+/* ---------- Layout ---------- */
+main { display: grid; gap: 40px; grid-template-columns: minmax(0, 1fr); padding-bottom: 40px; }
+@media (min-width: 960px) {
+  main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 44px; }
+}
+
+.pane-head {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+.pane-head h2 { margin: 0; font: 600 15px/1.3 var(--font); }
+.pane-head .spacer { flex: 1; }
+.examples { font-size: 13px; color: var(--muted); }
+
+.link {
+  border: 0; background: none; padding: 0;
+  color: var(--ink); font-size: inherit;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.link:hover { text-decoration-thickness: 2px; }
+.examples .link + .link { margin-left: 14px; }
+
+select {
+  min-height: 30px; padding: 3px 8px;
+  border: 1px solid var(--rule-strong); border-radius: var(--r);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+/* ---------- Editor ---------- */
+.editor {
+  display: flex;
+  height: clamp(320px, 58vh, 600px);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r);
+  background: var(--code-bg);
+  overflow: hidden;
+}
+.editor:focus-within { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* gutter and textarea share font, size and line-height so line numbers stay aligned */
+.gutter, textarea { font: 13.5px/21px var(--mono); padding-block: 14px; margin: 0; }
+.gutter {
+  width: 3.6em; flex: none; padding-right: 10px;
+  text-align: right; color: var(--gutter-ink);
+  border-right: 1px solid var(--rule);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden; white-space: pre; user-select: none;
+}
+textarea {
+  flex: 1; min-width: 0;
+  border: 0; outline: none; resize: none;
+  padding-inline: 16px;
+  background: transparent; color: var(--code-ink);
+  white-space: pre; overflow: auto; tab-size: 4;
+  scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent;
+}
+textarea::placeholder { color: var(--gutter-ink); }
+
+.foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 14px; }
+.foot .spacer { flex: 1; }
+.count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.count.over { color: var(--bug); font-weight: 600; }
+.hint { font-size: 13px; color: var(--muted); }
+
+.primary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 38px; padding: 8px 18px;
+  border: 0; border-radius: var(--r);
+  background: var(--ink); color: var(--bg);
+  font-size: 14px; font-weight: 600;
+}
+.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 82%, var(--bg)); }
+.primary:disabled { opacity: .4; cursor: not-allowed; }
+
+.spinner {
+  width: 13px; height: 13px;
+  border: 2px solid color-mix(in srgb, var(--bg) 35%, transparent);
+  border-top-color: var(--bg);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- Review ---------- */
+.review { min-height: 200px; }
+
+.placeholder { padding: 14px 0; border-top: 1px solid var(--rule); color: var(--muted); }
+.placeholder b { display: block; margin-bottom: 2px; font: 600 1.05rem var(--serif); color: var(--ink); }
+
+.skel {
+  height: 12px; margin: 14px 0; border-radius: 2px;
+  background: linear-gradient(90deg, var(--rule) 25%, var(--sel) 50%, var(--rule) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+.skel:nth-child(3n + 2) { width: 88%; }
+.skel:nth-child(3n)     { width: 64%; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+.error {
+  padding: 12px 14px;
+  border: 1px solid var(--bug); border-radius: var(--r);
+  background: color-mix(in srgb, var(--bug) 7%, var(--bg));
+  color: var(--bug); font-weight: 500;
+}
+
+/* severity counts: plain text, only the numbers carry colour */
+.tally { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 0 0 14px; font-size: 14px; color: var(--muted); }
+.tally b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tally .t-bug b      { color: var(--bug); }
+.tally .t-security b { color: var(--security); }
+.tally .t-style b    { color: var(--style); }
+.tally .t-tip b      { color: var(--tip); }
+.tally .t-clean b    { color: var(--tip); }
+
+.summary { margin: 0 0 8px; font: 1.25rem/1.45 var(--serif); text-wrap: pretty; }
+.note-meta { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+
+.tools { display: flex; gap: 18px; margin: 10px 0 18px; }
+.tool {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0; border: 0; background: none;
+  color: var(--ink); font-size: 14px; font-weight: 500;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
+}
+.tool:hover:not(:disabled) { text-decoration-thickness: 2px; }
+.tool svg { width: 15px; height: 15px; }
+.tool:disabled { opacity: .5; cursor: wait; }
+
+/* annotated code preview */
+.code-view {
+  margin-bottom: 4px; padding-block: 8px;
+  max-height: 320px; overflow: auto;
+  border: 1px solid var(--rule-strong); border-radius: var(--r);
+  background: var(--code-bg); color: var(--code-ink);
+  font: 13px/21px var(--mono);
+  scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent;
+}
+/* rows stretch to the widest line so the highlight never stops at the viewport edge */
+.code-view div { display: flex; width: max-content; min-width: 100%; padding-right: 14px; white-space: pre; }
+.code-view div.hl { background: var(--hl); }
+/* severity shows as a change bar in the margin, like a diff gutter */
+.code-view .mk { width: 14px; flex: none; display: flex; align-items: center; justify-content: center; }
+.code-view .mk i { width: 3px; height: 15px; border-radius: 1px; }
+.code-view .n {
+  width: 2.4em; flex: none; padding-right: 12px;
+  text-align: right; color: var(--gutter-ink);
+  font-variant-numeric: tabular-nums; user-select: none;
+}
+
+.sev-bug      { --c: var(--bug); }
+.sev-security { --c: var(--security); }
+.sev-style    { --c: var(--style); }
+.sev-tip      { --c: var(--tip); }
+.mk i { background: var(--c); }
+
+/* findings, set as margin notes:
+   margin column = severity + line, right column = the reviewer's comment */
+.notes { margin-top: 16px; border-top: 1px solid var(--rule-strong); }
+.note {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  column-gap: 16px;
+  padding: 16px 12px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+.note:hover { background: var(--sel); }
+/* the finding being read gets the same highlighter as its lines in the code */
+.note.active { background: color-mix(in srgb, var(--hl) 55%, transparent); }
+.note:focus-visible { outline-offset: -2px; }
+
+.note > * { grid-column: 2; }
+.note-head { display: contents; }
+.note-head > .sev { grid-column: 1; grid-row: 1; }
+.note-head > .ln  { grid-column: 1; grid-row: 2; }
+.note-head > h3   { grid-column: 2; grid-row: 1; }
+
+.sev { font: 600 13px/1.6 var(--font); color: var(--c); text-transform: capitalize; }
+.ln  { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.note h3 { margin: 0; font: 600 1.075rem/1.35 var(--serif); text-wrap: balance; }
+.note p { margin: 6px 0 0; max-width: 60ch; font: 1rem/1.6 var(--serif); text-wrap: pretty; }
+
+.fix-actions { display: flex; gap: 16px; margin-top: 10px; }
+.note pre {
+  margin: 10px 0 0; padding: 10px 12px; overflow: auto;
+  border: 1px solid var(--rule-strong); border-radius: var(--r);
+  background: var(--code-bg); color: var(--code-ink);
+  font: 13px/1.55 var(--mono);
+  scrollbar-width: thin;
+}
+
+.praise { margin-top: 28px; }
+.praise h3 { margin: 0 0 6px; font: 600 15px/1.3 var(--font); }
+.praise ul { margin: 0; padding-left: 18px; font: 1rem/1.6 var(--serif); }
+.praise li + li { margin-top: 3px; }
+
+/* ---------- Where to improve (added; uses the same tokens) ---------- */
+.growth { margin-top: 32px; padding-top: 4px; border-top: 1px solid var(--rule-strong); }
+.growth > h3 { margin: 14px 0 4px; font: 600 15px/1.3 var(--font); }
+.weak { padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.weak h4 { margin: 0; font: 600 1.075rem/1.35 var(--serif); text-wrap: balance; }
+.weak .obs { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+.weak .how { margin: 12px 0 4px; font: 600 13px var(--font); }
+.weak ul { margin: 0; padding-left: 18px; font: 1rem/1.6 var(--serif); }
+.weak li + li { margin-top: 4px; }
+
+.fine { max-width: 46em; padding-block: 8px 48px; color: var(--muted); font-size: 13px; }
+
+/* ---------- Small screens ---------- */
+@media (max-width: 520px) {
+  .editor { height: 300px; }
+  .hint { display: none; }
+  .foot .primary { flex: 1; }
+
+  /* margin notes collapse to a single column: severity, line and title on one row */
+  .note { grid-template-columns: minmax(0, 1fr); }
+  .note > * { grid-column: 1; }
+  .note-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; }
+  .note-head > .sev, .note-head > .ln, .note-head > h3 { grid-column: auto; grid-row: auto; }
+  .note h3 { flex: 1 1 100%; order: 3; }
+}
+@media (pointer: coarse) {
+  .seg button, select, .tool, .link { min-height: 40px; }
+  .seg button { padding-inline: 12px; }
+}
+
+/* ---------- Fix check and skill map (added; same tokens) ---------- */
+.progress-note { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--rule-strong); border-radius: var(--r); background: color-mix(in srgb, var(--tip) 7%, var(--bg)); }
+.progress-note b { font: 600 15px var(--font); }
+.progress-note p { margin: 4px 0 0; font: 1rem/1.55 var(--serif); }
+
+.skills { padding-block: 8px 24px; border-top: 1px solid var(--rule-strong); }
+.skills-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 14px 0 6px; }
+.skills-head h2 { margin: 0; font: 600 15px/1.3 var(--font); }
+.skills-head .spacer { flex: 1; }
+.skills .sub { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+.skill-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); column-gap: 44px; }
+@media (min-width: 960px) { .skill-list { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+.skill { display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: 2px 14px; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.skill-name { font: 600 1rem/1.35 var(--serif); }
+.skill-stats { grid-column: 1 / -1; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.meter { height: 6px; border-radius: 2px; background: var(--rule); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--tip); }
+.focus { margin-top: 18px; }
+.focus h3 { margin: 0 0 4px; font: 600 15px/1.3 var(--font); }
+.focus ul { margin: 0; padding-left: 18px; font: 1rem/1.6 var(--serif); }
+
+/* ---------- Skip link (added; same tokens) ---------- */
+.skip { position: absolute; left: 12px; top: -48px; z-index: 10; padding: 8px 12px; background: var(--ink); color: var(--bg); border-radius: var(--r); font-size: 14px; text-decoration: none; }
+.skip:focus { top: 12px; }
+
+/* ---------- Corrected code view (added; same tokens) ---------- */
+.fixview { margin: 0 0 16px; }
+.fixview > h3 { margin: 0 0 4px; font: 600 15px/1.3 var(--font); }
+.fixview .legend { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.diff { padding-block: 8px; max-height: 340px; overflow: auto; border: 1px solid var(--rule-strong); border-radius: var(--r); background: var(--code-bg); color: var(--code-ink); font: 13px/21px var(--mono); scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
+.diff .row { display: flex; width: max-content; min-width: 100%; padding-right: 14px; white-space: pre; }
+.diff .mark { width: 24px; flex: none; text-align: center; user-select: none; font-weight: 600; }
+.diff .n { width: 2.4em; flex: none; padding-right: 12px; text-align: right; color: var(--gutter-ink); font-variant-numeric: tabular-nums; user-select: none; }
+.diff .del { background: color-mix(in srgb, var(--bug) 13%, transparent); }
+.diff .del .mark { color: var(--bug); }
+.diff .del .txt { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--bug) 70%, transparent); opacity: .85; }
+.diff .add { background: color-mix(in srgb, var(--tip) 16%, transparent); }
+.diff .add .mark { color: var(--tip); }
+.diff .why { margin-left: 28px; align-self: center; color: var(--muted); font: italic 12px var(--font); }
+
+/* ---------- Device adjustments (added; same tokens) ---------- */
+button, select { touch-action: manipulation; }
+.review { overflow-wrap: break-word; scroll-margin-top: 12px; }
+
+/* keep content clear of notches and rounded corners (viewport-fit=cover) */
+.wrap {
+  padding-left: max(clamp(16px, 4vw, 32px), env(safe-area-inset-left));
+  padding-right: max(clamp(16px, 4vw, 32px), env(safe-area-inset-right));
+}
+.fine { padding-bottom: calc(48px + env(safe-area-inset-bottom)); }
+
+/* editor follows the visible viewport, so mobile browser bars don't cut it off */
+@media (min-width: 521px) { .editor { height: clamp(320px, 58dvh, 600px); } }
+
+/* narrow: the long status text gets its own row instead of squeezing the theme toggle */
+@media (max-width: 600px) { .bar .status { order: 3; flex: 1 0 100%; } }
+
+/* short landscape screens (phones on their side) */
+@media (max-height: 500px) and (orientation: landscape) {
+  .intro { padding-block: 20px 16px; }
+  .editor { height: 220px; }
+  .code-view { max-height: 200px; }
+}
+
+/* touch screens */
+@media (pointer: coarse) {
+  .hint { display: none; }                                   /* keyboard shortcut hint */
+  .gutter, textarea { font-size: 16px; line-height: 24px; }  /* 16px stops iOS zooming in on focus */
+  select { font-size: 16px; }
+  .examples .link, .fix-actions .link, .tool { display: inline-flex; align-items: center; }
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .skel { animation: none; }
+  .spinner { animation-duration: 2s; } /* keep a slow spin so "loading" is still visible */
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#h-code">Skip to the code editor</a>
+<div class="wrap">
+  <header class="bar">
+    <div class="brand">code<span>/</span>buddy</div>
+    <span class="spacer"></span>
+    <span class="status" id="status" data-state="idle"><i></i><span id="statusText">Runs on AWS</span></span>
+    <div class="seg" role="group" aria-label="Colour theme">
+      <button type="button" data-theme="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+      <button type="button" data-theme="system" aria-pressed="true">System</button>
+    </div>
+  </header>
+
+  <section class="intro">
+    <h1>A plain-English review of your code.</h1>
+    <p>Each note explains why a problem matters, not just what to change. Suggested fixes stay hidden until you ask, so you get to try first.</p>
+  </section>
+
+  <main>
+    <section aria-labelledby="h-code">
+      <div class="pane-head">
+        <h2 id="h-code">Your code</h2>
+        <select id="lang" aria-label="Language">
+          <option value="auto-detect">Auto-detect</option>
+          <option>Python</option><option>JavaScript</option><option>TypeScript</option>
+          <option>Java</option><option>C</option><option>C++</option><option>C#</option><option>Go</option><option>Rust</option>
+        </select>
+        <select id="explain" aria-label="Language for the explanations">
+          <option value="en">Explain in English</option>
+          <option value="hi">हिन्दी में समझाएँ</option>
+        </select>
+        <span class="spacer"></span>
+        <span class="examples">Examples:
+          <button class="link" data-s="0">off-by-one</button><button class="link" data-s="1">SQL injection</button><button class="link" data-s="2">Python gotcha</button>
+        </span>
+      </div>
+      <div class="editor">
+        <div class="gutter" id="gutter" aria-hidden="true">1</div>
+        <textarea id="code" spellcheck="false" wrap="off" placeholder="Paste your code here..." aria-label="Code to review"></textarea>
+      </div>
+      <div class="foot">
+        <button class="primary" id="go">Review my code</button>
+        <span class="hint">Ctrl/&#8984; + Enter</span>
+        <span class="spacer"></span>
+        <span class="count" id="count">0 / 300 lines</span>
+      </div>
+    </section>
+
+    <section class="review" id="out" aria-live="polite" aria-labelledby="h-review">
+    </section>
+  </main>
+
+  <section class="skills" id="skills" aria-labelledby="h-skills" hidden>
+    <div class="skills-head">
+      <h2 id="h-skills">Your skill map</h2>
+      <span class="spacer"></span>
+      <button class="link" id="clearSkills" type="button">Clear my data</button>
+    </div>
+    <p class="sub">Tracks the habits behind your mistakes and which ones you have fixed. This history is saved only in this browser.</p>
+    <ul class="skill-list" id="skillList"></ul>
+    <div class="focus" id="focus" hidden></div>
+  </section>
+
+  <p class="fine">Reviews can be wrong. Run and test your code, and ask a teacher when you are unsure. Your code is sent to AWS only to produce the review.</p>
+</div>
+
+<script>
+const MAX_LINES = 300;
+const SAMPLES = [
+  { lang: 'Python', code: `def average(nums):\n    total = 0\n    for i in range(len(nums) + 1):\n        total += nums[i]\n    return total / len(nums)\n\nprint(average([4, 8, 15, 16, 23, 42]))\n` },
+  { lang: 'JavaScript', code: `const express = require('express');\nconst app = express();\n\napp.get('/user', (req, res) => {\n  const name = req.query.name;\n  db.query("SELECT * FROM users WHERE name = '" + name + "'", (err, rows) => {\n    res.send(rows);\n  });\n});\n\napp.listen(3000);\n` },
+  { lang: 'Python', code: `def add_item(item, basket=[]):\n    basket.append(item)\n    return basket\n\nprint(add_item("apple"))\nprint(add_item("banana"))\n\nif x = 5:\n    print("five")\n` },
+];
+const SPEAKER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>';
+const SEV_ORDER = ['bug', 'security', 'style', 'tip'];
+const T = {
+  en: { review: 'Review', sev: { bug: 'bug', security: 'security', style: 'style', tip: 'tip' }, line: 'line', issue: 'Issue',
+    showFix: 'Show suggested fix', hideFix: 'Hide suggested fix', copy: 'Copy', copied: 'Copied', readAloud: 'Read aloud',
+    loadingAudio: 'Loading audio...', noAudio: 'Could not play audio', checkFix: 'Check my fix', editFirst: 'Edit your code first',
+    improve: 'Where to improve', how: 'How to improve', praise: 'What you did well', noProblems: 'No problems found',
+    allClear: 'All clear.', progress: 'Progress.', same: 'Same number of issues.', more: 'More issues than before.',
+    issues: 'Issues', fixed: 'Fixed', open: 'Still to work on',
+    suggestFix: 'Suggest fix', hideCorrected: 'Hide corrected code', corrected: 'Corrected code', fixes: 'Fixes', copyCorrected: 'Copy corrected code',
+    legend: 'Your code with the fixes applied. The old line is struck through in red and the new line is highlighted in green. Everything else is unchanged.',
+    noAuto: 'No automatic fix is available for these issues. Use Show suggested fix under each issue.' },
+};
+let explain = 'en'; // language of the explanations
+try { const v = localStorage.getItem('code-buddy-explain'); if (v === 'en' || v === 'hi') explain = v; } catch (e) { /* storage blocked */ }
+const tx = (k) => T.en[k]; // buttons and labels always stay in English; only the review text follows the language picker
+let shown = null; // the review on screen, so a language change can redo it without touching progress
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const ta = $('code'), gutter = $('gutter'), go = $('go'), out = $('out');
+let busy = false;
+
+/* ---- theme: light / dark / system ---- */
+function applyTheme(choice) {
+  const root = document.documentElement;
+  if (choice === 'light' || choice === 'dark') root.dataset.theme = choice; else delete root.dataset.theme;
+  document.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.theme === choice)));
+}
+let savedTheme = 'system';
+try { savedTheme = localStorage.getItem('code-buddy-theme') || 'system'; } catch (e) { /* storage blocked */ }
+applyTheme(savedTheme);
+document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+  applyTheme(b.dataset.theme);
+  try { localStorage.setItem('code-buddy-theme', b.dataset.theme); } catch (e) { /* storage blocked */ }
+}));
+
+/* ---- editor ---- */
+function updateEditor() {
+  const n = ta.value.split('\n').length;
+  gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n');
+  gutter.scrollTop = ta.scrollTop;
+  $('count').textContent = `${ta.value ? n : 0} / ${MAX_LINES} lines`;
+  $('count').classList.toggle('over', n > MAX_LINES);
+  go.disabled = busy || n > MAX_LINES;
+}
+ta.addEventListener('input', updateEditor);
+ta.addEventListener('scroll', () => { gutter.scrollTop = ta.scrollTop; });
+ta.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); reviewCode(); } });
+function loadSample(i) { const s = SAMPLES[i]; ta.value = s.code; $('lang').value = s.lang; updateEditor(); }
+document.querySelectorAll('.examples .link').forEach((b) => b.addEventListener('click', () => { loadSample(+b.dataset.s); ta.focus(); }));
+
+/* ---- review states ---- */
+function paneHead() { const h = el('div', 'pane-head'); const title = el('h2', null, tx('review')); title.id = 'h-review'; h.append(title); return h; }
+function showEmpty() {
+  const p = el('div', 'placeholder'); p.append(el('b', null, 'No review yet'), el('span', null, 'Press "Review my code" to see notes on the code on the left.'));
+  out.replaceChildren(paneHead(), p);
+}
+function showLoading() {
+  out.replaceChildren(paneHead(), ...[90, 70, 100, 55, 80].map((w) => { const s = el('div', 'skel'); s.style.width = w + '%'; return s; }));
+}
+function showError(msg) { out.replaceChildren(paneHead(), el('div', 'error', msg)); }
+
+function setEngine(engine) {
+  $('status').dataset.state = engine === 'bedrock' ? 'bedrock' : 'rules';
+  $('statusText').textContent = engine === 'bedrock' ? 'Reviewed by Amazon Bedrock' : 'Reviewed by built-in checks';
+}
+
+function render(code, r, cmp) {
+  setEngine(r.engine);
+  out.replaceChildren(paneHead());
+
+  if (cmp) { // result of "Check my fix": compare with the previous review
+    const verdict = cmp.after === 0 ? tx('allClear') : cmp.after < cmp.before ? tx('progress') : cmp.after === cmp.before ? tx('same') : tx('more');
+    const detail = `${tx('issues')}: ${cmp.before} → ${cmp.after}.` + (cmp.fixed.length ? ` ${tx('fixed')}: ${cmp.fixed.join(', ')}.` : '') + (cmp.open.length ? ` ${tx('open')}: ${cmp.open.join(', ')}.` : '');
+    const b = el('div', 'progress-note'); b.append(el('b', null, verdict), el('p', null, detail));
+    out.append(b);
+  }
+
+  const tally = el('p', 'tally');
+  SEV_ORDER.forEach((k) => {
+    const n = r.issues.filter((i) => i.severity === k).length;
+    if (n) { const s = el('span', `t-${k}`); s.append(el('b', null, String(n)), document.createTextNode(` ${tx('sev')[k]}`)); tally.append(s); }
+  });
+  if (!r.issues.length) { const s = el('span', 't-clean'); s.append(el('b', null, tx('noProblems'))); tally.append(s); }
+  out.append(tally, el('p', 'summary', r.summary));
+
+  const tools = el('div', 'tools');
+  const speak = el('button', 'tool'); speak.innerHTML = SPEAKER; speak.append(document.createTextNode(tx('readAloud')));
+  speak.addEventListener('click', () => readAloud(r, speak));
+  const fixPanel = el('div', 'fixview'); fixPanel.hidden = true;
+  tools.append(speak);
+  if (r.issues.length) {
+    const sug = el('button', 'tool', tx('suggestFix')); sug.setAttribute('aria-expanded', 'false');
+    sug.addEventListener('click', () => {
+      const opening = fixPanel.hidden;
+      if (opening && !fixPanel.childNodes.length) fixPanel.append(...buildFixView(code, r));
+      fixPanel.hidden = !opening;
+      sug.textContent = opening ? tx('hideCorrected') : tx('suggestFix');
+      sug.setAttribute('aria-expanded', String(opening));
+      if (opening) fixPanel.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    });
+    tools.append(sug);
+    const chk = el('button', 'tool', tx('checkFix'));
+    chk.addEventListener('click', () => {
+      if (ta.value === code) { // nothing to compare yet: send them to the editor
+        chk.textContent = tx('editFirst'); setTimeout(() => { chk.textContent = tx('checkFix'); }, 2500);
+        ta.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'center' });
+        ta.focus({ preventScroll: true });
+        return;
+      }
+      reviewCode(true);
+    });
+    tools.append(chk);
+  }
+  out.append(tools);
+
+  const lineSev = {};
+  r.issues.forEach((i) => { const cur = lineSev[i.line]; if (!cur || SEV_ORDER.indexOf(i.severity) < SEV_ORDER.indexOf(cur)) lineSev[i.line] = i.severity; });
+  const view = el('div', 'code-view');
+  code.split('\n').forEach((text, i) => {
+    const row = el('div'); row.dataset.line = i + 1;
+    const mk = el('span', 'mk');
+    if (lineSev[i + 1]) { const dot = el('i'); mk.className = `mk sev-${lineSev[i + 1]}`; mk.append(dot); }
+    row.append(mk, el('span', 'n', String(i + 1)), el('span', null, text));
+    view.append(row);
+  });
+  out.append(view, fixPanel);
+
+  const list = el('div', 'notes'); const cards = [];
+  const highlight = (line, card) => {
+    view.querySelectorAll('.hl').forEach((n) => n.classList.remove('hl'));
+    cards.forEach((c) => c.classList.toggle('active', c === card));
+    const row = view.querySelector(`[data-line="${line}"]`);
+    if (row) { row.classList.add('hl'); row.scrollIntoView({ block: 'nearest' }); }
+  };
+  r.issues.forEach((i) => {
+    const card = el('article', `note sev-${i.severity}`); card.tabIndex = 0;
+    const head = el('div', 'note-head');
+    head.append(el('span', 'sev', i.severity), el('h3', null, i.title), el('span', 'ln', `${tx('line')} ${i.line}`));
+    card.append(head, el('p', null, i.explanation));
+    if (i.fix) {
+      const acts = el('div', 'fix-actions');
+      const show = el('button', 'link', tx('showFix'));
+      const copy = el('button', 'link', tx('copy')); copy.hidden = true;
+      const pre = el('pre', null, i.fix); pre.hidden = true;
+      show.addEventListener('click', (e) => {
+        e.stopPropagation(); pre.hidden = !pre.hidden; copy.hidden = pre.hidden;
+        show.textContent = pre.hidden ? tx('showFix') : tx('hideFix');
+      });
+      copy.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try { await navigator.clipboard.writeText(i.fix); copy.textContent = tx('copied'); setTimeout(() => { copy.textContent = tx('copy'); }, 1500); } catch (err) { /* clipboard blocked */ }
+      });
+      acts.append(show, copy); card.append(acts, pre);
+    }
+    card.addEventListener('click', () => highlight(i.line, card));
+    card.addEventListener('keydown', (e) => { if (e.target === card && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); highlight(i.line, card); } });
+    cards.push(card); list.append(card);
+  });
+  if (r.issues.length) { out.append(list); highlight(r.issues[0].line, cards[0]); }
+
+  if (r.weakPoints && r.weakPoints.length) {
+    const g = el('section', 'growth'); g.append(el('h3', null, tx('improve')));
+    r.weakPoints.forEach((w) => {
+      const a = el('article', 'weak');
+      a.append(el('h4', null, w.topic));
+      if (w.observation) a.append(el('p', 'obs', w.observation));
+      const ul = el('ul'); w.steps.forEach((s) => ul.append(el('li', null, s)));
+      a.append(el('p', 'how', tx('how')), ul);
+      g.append(a);
+    });
+    out.append(g);
+  }
+
+  if (r.praise.length) {
+    const p = el('div', 'praise'); p.append(el('h3', null, tx('praise')));
+    const ul = el('ul'); r.praise.forEach((t) => ul.append(el('li', null, t))); p.append(ul);
+    out.append(p);
+  }
+}
+
+/* ---- corrected code: line diff between the learner's code and the corrected copy ---- */
+function diffLines(a, b) {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const rows = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { rows.push({ t: 'same', old: i + 1, text: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { rows.push({ t: 'del', old: i + 1, text: a[i] }); i++; }
+    else { rows.push({ t: 'add', text: b[j] }); j++; }
+  }
+  while (i < n) { rows.push({ t: 'del', old: i + 1, text: a[i] }); i++; }
+  while (j < m) { rows.push({ t: 'add', text: b[j] }); j++; }
+  return rows;
+}
+
+function buildFixView(code, r) {
+  const head = el('h3', null, tx('corrected'));
+  if (!r.correctedCode) return [head, el('p', 'legend', tx('noAuto'))];
+  const rows = diffLines(code.split('\n'), r.correctedCode.split('\n'));
+
+  // group neighbouring changed rows into blocks, and say which issue each block fixes
+  const blocks = []; let cur = null;
+  rows.forEach((row, idx) => {
+    if (row.t === 'same') { cur = null; return; }
+    if (!cur) { cur = { start: idx, rows: [] }; blocks.push(cur); }
+    cur.rows.push(row);
+  });
+  const handled = new Set();
+  blocks.forEach((b) => {
+    const dels = b.rows.filter((x) => x.t === 'del').map((x) => x.old);
+    let lo, hi;
+    if (dels.length) { lo = Math.min(...dels); hi = Math.max(...dels); }
+    else { const next = rows.slice(b.start + b.rows.length).find((x) => x.old); lo = hi = next ? next.old : code.split('\n').length; }
+    const titles = [...new Set(r.issues.filter((i) => i.line >= lo && i.line <= hi).map((i) => { handled.add(i); return i.title; }))];
+    if (titles.length) b.rows[0].why = `${tx('fixes')}: ${titles.join(' · ')}`;
+  });
+
+  const box = el('div', 'diff');
+  rows.forEach((row) => {
+    const d = el('div', row.t === 'same' ? 'row' : `row ${row.t}`);
+    d.append(el('span', 'mark', row.t === 'add' ? '+' : row.t === 'del' ? '−' : ''), el('span', 'n', row.old ? String(row.old) : ''), el('span', 'txt', row.text));
+    if (row.why) d.append(el('span', 'why', row.why));
+    box.append(d);
+  });
+
+  const copy = el('button', 'link', tx('copyCorrected'));
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(r.correctedCode); copy.textContent = tx('copied'); setTimeout(() => { copy.textContent = tx('copyCorrected'); }, 1500); } catch (err) { /* clipboard blocked */ }
+  });
+  const out2 = [head, el('p', 'legend', tx('legend')), box, el('div', 'fix-actions', null)];
+  out2[3].append(copy);
+  const manual = r.issues.filter((i) => !handled.has(i));
+  if (manual.length) out2.push(el('p', 'legend', `${manual.length} ${manual.length === 1 ? 'issue needs' : 'issues need'} a change by hand (${manual.map((i) => tx('line') + ' ' + i.line).join(', ')}). Use Show suggested fix under ${manual.length === 1 ? 'it' : 'each one'}.`));
+  return out2;
+}
+
+/* ---- progress and skill map (stored in this browser only) ---- */
+const PROGRESS_KEY = 'code-buddy-progress';
+let progress = { topics: {}, reviews: 0 };
+try { progress = JSON.parse(localStorage.getItem(PROGRESS_KEY)) || progress; } catch (e) { /* storage blocked */ }
+let last = null; // the previous review, so "Check my fix" can compare against it
+const saveProgress = () => { try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); } catch (e) { /* storage blocked */ } };
+
+function recordReview(code, r, recheck) {
+  const weak = r.weakPoints || [];
+  const topics = weak.map((w) => w.key || w.topic);
+  let cmp = null, flag = topics;
+  if (recheck && last) {
+    const fixed = last.topics.filter((t) => !topics.includes(t));
+    const open = last.topics.filter((t) => topics.includes(t));
+    fixed.forEach((t) => { const e = progress.topics[t]; if (e) e.fixed = Math.min(e.flagged, e.fixed + 1); });
+    flag = topics.filter((t) => !last.topics.includes(t)); // only newly appearing habits count as new flags
+    cmp = { before: last.issues, after: r.issues.length, fixed, open };
+  }
+  weak.filter((w) => flag.includes(w.key || w.topic)).forEach((w) => {
+    const k = w.key || w.topic;
+    const e = progress.topics[k] || (progress.topics[k] = { flagged: 0, fixed: 0, steps: [] });
+    e.flagged++; e.steps = w.steps;
+  });
+  progress.reviews++;
+  saveProgress();
+  last = { code, topics, issues: r.issues.length };
+  return cmp;
+}
+
+function renderSkills() {
+  const entries = Object.entries(progress.topics);
+  $('skills').hidden = !entries.length;
+  if (!entries.length) return;
+  entries.sort((a, b) => (b[1].flagged - b[1].fixed) - (a[1].flagged - a[1].fixed) || b[1].flagged - a[1].flagged);
+  $('skillList').replaceChildren(...entries.map(([topic, e]) => {
+    const row = el('li', 'skill');
+    const meter = el('span', 'meter'); meter.setAttribute('role', 'img'); meter.setAttribute('aria-label', `${e.fixed} of ${e.flagged} fixed`);
+    const fill = el('i'); fill.style.width = Math.min(100, Math.round((e.fixed / e.flagged) * 100)) + '%'; meter.append(fill);
+    row.append(el('span', 'skill-name', topic), meter, el('span', 'skill-stats', `Flagged ${e.flagged}× · fixed ${e.fixed}×`));
+    return row;
+  }));
+  const next = entries.find(([, e]) => e.flagged > e.fixed && e.steps && e.steps.length);
+  const focus = $('focus'); focus.hidden = !next;
+  if (next) {
+    const ul = el('ul'); next[1].steps.forEach((s) => ul.append(el('li', null, s)));
+    focus.replaceChildren(el('h3', null, `Focus next: ${next[0]}`), ul);
+  }
+}
+$('clearSkills').addEventListener('click', () => {
+  if (!confirm('Clear your saved skill history from this browser?')) return;
+  progress = { topics: {}, reviews: 0 }; saveProgress(); renderSkills();
+});
+
+/* ---- actions ---- */
+async function readAloud(r, btn) {
+  const text = [r.summary, ...r.issues.map((i, n) => `${tx('issue')} ${n + 1}, ${tx('line')} ${i.line}. ${i.title}. ${i.explanation}`), r.praise[0] || ''].join(' ');
+  const nodes = [...btn.childNodes];
+  btn.disabled = true; btn.replaceChildren(document.createTextNode(tx('loadingAudio')));
+  let failed = false;
+  // Create the player inside the click. iOS/Safari only allows playback for elements the tap "unlocked",
+  // and the network wait below would otherwise make the browser block it.
+  const audio = new Audio();
+  if (!r.audio) { audio.src = SILENT_WAV; audio.play().catch(() => {}); }
+  try {
+    if (!r.audio) { // fetch once per review; replays are free
+      const res = await fetch('/speak', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, lang: explain }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      r.audio = data.audio;
+    }
+    audio.src = 'data:audio/mpeg;base64,' + r.audio;
+    await audio.play();
+  } catch (err) { failed = true; btn.replaceChildren(document.createTextNode(tx('noAudio'))); }
+  setTimeout(() => { btn.replaceChildren(...nodes); btn.disabled = false; }, failed ? 2500 : 0);
+}
+
+async function reviewCode(recheck = false) {
+  if (busy) return;
+  const code = ta.value;
+  if (!code.trim()) { showError('Paste some code first, or load an example.'); return; }
+  busy = true; updateEditor();
+  go.replaceChildren(el('span', 'spinner'), document.createTextNode('Reviewing...'));
+  showLoading();
+  // single-column layouts (phones, tablets): the review sits below the editor, so bring it into view
+  if (window.matchMedia('(max-width: 959px)').matches) {
+    out.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  }
+  try {
+    const res = await fetch('/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, language: $('lang').value, explainIn: explain }) });
+    const data = await res.json();
+    if (!res.ok) showError(data.error || 'Something went wrong.'); else { const cmp = recordReview(code, data, recheck); shown = { code, cmp }; render(code, data, cmp); renderSkills(); const h = $('h-review'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); } }
+  } catch (err) { showError('Could not reach the reviewer. Check your connection and try again.'); }
+  busy = false; go.textContent = 'Review my code'; updateEditor();
+}
+go.addEventListener('click', () => reviewCode());
+
+// Changing the explanation language redoes the review on screen (same code, no progress counted twice).
+$('explain').value = explain;
+$('explain').addEventListener('change', async () => {
+  explain = $('explain').value;
+  try { localStorage.setItem('code-buddy-explain', explain); } catch (e) { /* storage blocked */ }
+  if (!shown) { showEmpty(); return; }
+  if (busy) return;
+  busy = true; updateEditor(); showLoading();
+  try {
+    const res = await fetch('/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: shown.code, language: $('lang').value, explainIn: explain }) });
+    const data = await res.json();
+    if (!res.ok) showError(data.error || 'Something went wrong.'); else render(shown.code, data, shown.cmp);
+  } catch (err) { showError('Could not reach the reviewer. Check your connection and try again.'); }
+  busy = false; updateEditor();
+});
+
+// First visit in this tab: show a finished review of the sample code, so the page opens with something to look at.
+async function showExample() {
+  try { if (sessionStorage.getItem('code-buddy-example')) return; sessionStorage.setItem('code-buddy-example', '1'); } catch (e) { return; }
+  const code = ta.value;
+  try {
+    const res = await fetch('/review', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, language: $('lang').value, explainIn: explain }) });
+    const data = await res.json();
+    if (!res.ok || shown || busy) return; // the visitor already did something: leave their screen alone
+    shown = { code, cmp: null };
+    render(code, data, null);
+    const note = el('p', 'note-meta', 'This is an example review of the sample code on the left. Edit the code or pick another example, then press Review my code.');
+    out.children[0].after(note);
+  } catch (err) { /* no example if the request fails: the empty state stays */ }
+}
+
+loadSample(0); showEmpty(); renderSkills(); showExample();
+</script>
+</body>
+</html>
