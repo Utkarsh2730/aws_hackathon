@@ -97,3 +97,4 @@ Add a language-model review engine to catch mistakes beyond the built-in checks,
 5. Scroll to **Where to improve** and the **Skill map**: the habits behind the mistakes.
 6. Switch to **हिन्दी में समझाएँ**, then press **Read aloud**.
 7. Close with the honest note: the built-in checks catch the well-known beginner mistakes, and the page says so.
+Link-https://7cbenbwhuie65xeeogdsr3hery0vemit.lambda-url.ap-northeast-1.on.aws/
