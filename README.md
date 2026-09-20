@@ -85,7 +85,7 @@ src/index.html     the whole front end (HTML, CSS, JavaScript in one file)
 
 ## Built with
 
-Built with Claude Code as a development assistant: to test whether the idea made sense for education, to work out what beginners get stuck on and what a chatbot does not do for them, and to design, write and test the code.
+Built with Claude Code as a development assistant: to test whether the idea made sense for education, to work out what beginners get stuck on and what a chatbot does not do for them, and to design and test the code.
 
 ## What we would do next
 
